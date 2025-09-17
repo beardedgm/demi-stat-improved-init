@@ -10,10 +10,40 @@
 
   // Parses a string like "Athletics +31" into { Name: "Athletics", Modifier: 31 }
   const parseNameModifier = (text) => {
-    const parts = text.trim().split(' ');
-    const modifier = parseInt(parts.pop(), 10) || 0;
-    const name = parts.join(' ');
-    return { Name: name, Modifier: modifier };
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return { Name: "", Modifier: 0 };
+    }
+
+    const match = trimmed.match(/^(.*?)([+-]\d+)([^+-]*)$/);
+    if (!match) {
+      return { Name: trimmed, Modifier: 0 };
+    }
+
+    const [, namePart, modifierPart, trailingPart] = match;
+    const modifier = parseInt(modifierPart, 10) || 0;
+
+    let baseName = namePart.trim();
+    let trailing = trailingPart.trim();
+
+    if (trailing) {
+      if (/^[([].*/.test(trailing)) {
+        baseName = baseName ? `${baseName} ${trailing}`.trim() : trailing;
+        trailing = "";
+      } else if (baseName.endsWith('(') && trailing.endsWith(')')) {
+        baseName = `${baseName}${trailing}`.replace(/\s+/g, ' ').trim();
+        trailing = "";
+      }
+    }
+
+    baseName = baseName.replace(/\s+/g, ' ').trim();
+
+    const result = { Name: baseName, Modifier: modifier };
+    if (trailing) {
+      result.Notes = trailing;
+    }
+
+    return result;
   };
   
   // Gets the action cost icon (1, 2, 3, R, F) from an element
