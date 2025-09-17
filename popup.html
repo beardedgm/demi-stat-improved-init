@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Demiplane Stat Extractor</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      width: 400px;
+      padding: 10px;
+    }
+    #extractBtn {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #copyBtn {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 16px;
+      cursor: pointer;
+      display: none; /* Hidden by default */
+    }
+    pre {
+      background-color: #f4f4f4;
+      border: 1px solid #ddd;
+      padding: 10px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Demiplane Stat Extractor</h1>
+  <button id="extractBtn">Extract Stats</button>
+  <button id="copyBtn">Copy JSON</button>
+  <pre id="output">Click the button to extract stats...</pre>
+  <script src="popup.js"></script>
+</body>
+</html>
