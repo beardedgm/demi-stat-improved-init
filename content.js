@@ -113,11 +113,14 @@
 
       // --- Basic Info ---
       finalJson.Challenge = String(monsterData.level);
-      const traits = monsterData.traits.split(',').map(t => t.split('|')[0]);
+      const traits = monsterData.traits
+        .split(',')
+        .map(t => t.split('|')[0].trim())
+        .filter(Boolean);
       const size = traits.find(t => ["Tiny", "Small", "Medium", "Large", "Huge", "Gargantuan"].includes(t)) || "";
       const type = traits.find(t => ["Dragon", "Humanoid", "Aberration", "Construct", "Undead", "Ooze", "Beast", "Fiend", "Elemental"].includes(t)) || "Creature";
       const subtypes = traits.filter(t => ![size, type, "Uncommon", "Rare", "Unique"].includes(t) && !/^[A-Z]{1,2}$/.test(t));
-      finalJson.Type = `${size} ${type.toLowerCase()}${subtypes.length > 0 ? ` (${subtypes.map(s => s.toLowerCase()).join(', ')})` : ''}`.trim();
+      finalJson.Type = `${size} ${type.toLowerCase()}${subtypes.length > 0 ? ` (${subtypes.map(s => s.trim().toLowerCase()).join(', ')})` : ''}`.trim();
       
       const statParagraphs = doc.querySelectorAll('p[class*="Stat-"]');
 
