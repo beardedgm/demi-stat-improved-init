@@ -90,14 +90,45 @@
   ]);
 
   // --- MAIN EXTRACTION LOGIC ---
-  function extractStats() {
-    const nextDataScript = document.getElementById('__NEXT_DATA__');
-    if (!nextDataScript) {
-      return { error: "Could not find page data script." };
+  const getPageProps = () => {
+    if (window.__NEXT_DATA__?.props?.pageProps) {
+      return window.__NEXT_DATA__.props.pageProps;
     }
 
+    const nextDataScript = document.getElementById('__NEXT_DATA__') ||
+      document.querySelector('script[data-next-data]');
+
+    if (nextDataScript?.textContent) {
+      try {
+        return JSON.parse(nextDataScript.textContent).props?.pageProps || null;
+      } catch (err) {
+        console.warn('Failed to parse __NEXT_DATA__ JSON script.', err);
+      }
+    }
+
+    const assignedScript = [...document.scripts].find(script =>
+      /__NEXT_DATA__\s*=/.test(script.textContent)
+    );
+    if (assignedScript?.textContent) {
+      const match = assignedScript.textContent.match(/__NEXT_DATA__\s*=\s*({.*})\s*;?/s);
+      if (match?.[1]) {
+        try {
+          return JSON.parse(match[1]).props?.pageProps || null;
+        } catch (err) {
+          console.warn('Failed to parse __NEXT_DATA__ assignment.', err);
+        }
+      }
+    }
+
+    return null;
+  };
+
+  function extractStats() {
     try {
-      const pageData = JSON.parse(nextDataScript.textContent).props?.pageProps;
+      const pageData = getPageProps();
+      if (!pageData) {
+        return { error: "Could not find page data script." };
+      }
 
       if (!pageData || !pageData.elementDisplayVersion || !pageData.elementDisplayVersion.element_display) {
         return {
