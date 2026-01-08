@@ -56,10 +56,10 @@
     return result;
   };
 
-  // Gets the action cost icon (1, 2, 3, R, F) from an element (with alt-text fallbacks)
+  // Gets the action cost icon (1, 2, 3, R, F) from an element
   const getActionCost = (element) => {
-    const alt = element.querySelector('img[alt]')?.getAttribute('alt')?.toLowerCase() || "";
-    if (alt.includes('one')) return '(1)';
+    const alt = element.querySelector('span[aria-label]')?.getAttribute('aria-label')?.toLowerCase() || "";
+    if (alt.includes('single')) return '(1)';
     if (alt.includes('two')) return '(2)';
     if (alt.includes('three')) return '(3)';
     if (alt.includes('reaction')) return '(R)';
@@ -89,64 +89,35 @@
     "Fey","Fiend","Fungus","Giant","Humanoid","Monitor","Ooze","Plant","Spirit","Undead"
   ]);
 
-  // --- MAIN EXTRACTION LOGIC ---
-  const getPageProps = () => {
-    if (window.__NEXT_DATA__?.props?.pageProps) {
-      return window.__NEXT_DATA__.props.pageProps;
-    }
-
-    const nextDataScript = document.getElementById('__NEXT_DATA__') ||
-      document.querySelector('script[data-next-data]');
-
-    if (nextDataScript?.textContent) {
-      try {
-        return JSON.parse(nextDataScript.textContent).props?.pageProps || null;
-      } catch (err) {
-        console.warn('Failed to parse __NEXT_DATA__ JSON script.', err);
-      }
-    }
-
-    const assignedScript = [...document.scripts].find(script =>
-      /__NEXT_DATA__\s*=/.test(script.textContent)
-    );
-    if (assignedScript?.textContent) {
-      const match = assignedScript.textContent.match(/__NEXT_DATA__\s*=\s*({.*})\s*;?/s);
-      if (match?.[1]) {
-        try {
-          return JSON.parse(match[1]).props?.pageProps || null;
-        } catch (err) {
-          console.warn('Failed to parse __NEXT_DATA__ assignment.', err);
+  // Wait for content to load
+  function waitForContent(maxAttempts = 40, interval = 250) {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const check = setInterval(() => {
+        const statBlock = document.querySelector('.page-inner-holder');
+        const hasName = document.querySelector('.elem-disp-header-name-page h1');
+        
+        if (statBlock && hasName) {
+          clearInterval(check);
+          resolve();
+        } else if (++attempts >= maxAttempts) {
+          clearInterval(check);
+          reject(new Error('Content failed to load'));
         }
-      }
-    }
+      }, interval);
+    });
+  }
 
-    return null;
-  };
-
-  function extractStats() {
+  // --- MAIN EXTRACTION LOGIC ---
+  async function extractStats() {
     try {
-      const pageData = getPageProps();
-      if (!pageData) {
-        return { error: "Could not find page data script." };
-      }
-
-      if (!pageData || !pageData.elementDisplayVersion || !pageData.elementDisplayVersion.element_display) {
-        return {
-          error: "No Stat Block Found",
-          message: "This page doesn't contain a character or creature stat block in the expected format. Please navigate to a specific creature page and try again."
-        };
-      }
-
-      const monsterData = pageData.elementDisplayVersion;
-      const displayHtml = monsterData.element_display;
-
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(displayHtml, "text/html");
+      // Wait for content to load
+      await waitForContent();
 
       // Initialize the final JSON object
       const finalJson = {
         Source: "Pathfinder 2e",
-        Name: monsterData.name || "Unknown",
+        Name: "Unknown",
         Type: "",
         HP: { Value: 0, Notes: "" },
         AC: { Value: 0, Notes: "" },
@@ -172,68 +143,78 @@
         Description: "",
         Player: "",
         Version: "3.13.2",
-        ImageURL: monsterData.element_thumbnail ? `https://content.demiplane.com${monsterData.element_thumbnail}` : "",
+        ImageURL: "",
         LastUpdateMs: Date.now()
       };
 
-      // --- Basic Info / Traits -> Type ---
-      finalJson.Challenge = String(monsterData.level ?? 0);
+      // Extract Name
+      const nameEl = document.querySelector('.elem-disp-header-name-page h1');
+      if (nameEl) {
+        finalJson.Name = nameEl.textContent.trim();
+      }
 
-      // Traits come in "name|id,name|id,..."
-      const rawTraits = (monsterData.traits || '')
-        .split(',')
-        .map(t => t.split('|')[0].trim())
-        .filter(Boolean);
+      // Extract Level/Challenge
+      const levelTag = document.querySelector('.element-display-header-tag-creature');
+      if (levelTag) {
+        const levelMatch = levelTag.textContent.match(/Creature\s+(\d+)/i);
+        if (levelMatch) {
+          finalJson.Challenge = levelMatch[1];
+        }
+      }
 
+      // Extract Traits (size, type, alignment)
+      const traitButtons = document.querySelectorAll('.trait-tag button');
+      const rawTraits = Array.from(traitButtons).map(btn => btn.textContent.trim());
+      
       const size = rawTraits.find(t => SIZES.has(t)) || "";
-      // prefer PF2 types (case-insensitive)
       const typeTrait = rawTraits.find(t => PF2_TYPES.has(t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())) || "Creature";
       const typeCanonical = typeTrait.charAt(0).toUpperCase() + typeTrait.slice(1).toLowerCase();
-
+      
       const subtypes = rawTraits.filter(t =>
         t !== size &&
         t !== typeTrait &&
-        t !== "Uncommon" && t !== "Rare" && t !== "Unique" &&
-        !/^[A-Z]{1,2}$/.test(t)
+        !/^[A-Z]{1,2}$/.test(t) // alignment codes
       );
 
       finalJson.Type = `${size ? size + ' ' : ''}${typeCanonical.toLowerCase()}${subtypes.length ? ` (${subtypes.map(s => s.trim().toLowerCase()).join(', ')})` : ''}`.trim();
 
-      // --- Collect candidate stat nodes (broadened selection) ---
-      // We look at any <p> or <li> that has a <strong> label, since Demiplane varies markup
-      const statNodes = [...doc.querySelectorAll('p, li')].filter(el => el.querySelector('strong'));
+      // Extract Image
+      const thumbImg = document.querySelector('.elem-disp-header-thumb-img-page');
+      if (thumbImg) {
+        finalJson.ImageURL = thumbImg.src;
+      }
 
-      // --- Switch-style parse ---
-      statNodes.forEach(p => {
+      // --- Parse Stat Block ---
+      const statParagraphs = document.querySelectorAll('.page-inner-holder p.Stat-Body, .page-inner-holder p.Stat-Body-secondary');
+      
+      statParagraphs.forEach(p => {
         const strongTag = p.querySelector('strong');
         if (!strongTag) return;
 
         const key = strongTag.textContent.trim();
-        let fullText = p.textContent.trim().replace(/\u00a0/g, ' '); // normalize NBSP
+        let fullText = p.textContent.trim().replace(/\u00a0/g, ' ');
         let value = fullText.replace(key, '').trim();
         if (value.startsWith(';')) value = value.substring(1).trim();
 
-        // classify
+        // Classify the section
         let sectionType = key;
 
-        // abilities line can be labeled or just be STR/DEX etc; treat both full and abbr
         if (/^(str|dex|con|int|wis|cha|strength|dexterity|constitution|intelligence|wisdom|charisma)\b/i.test(key)) {
           sectionType = 'Abilities';
         }
 
-        const hasActionIcon = !!p.querySelector('[class*="-action-icon"]') || !!p.querySelector('img[alt]');
-        if (p.querySelector('.reaction-icon') || /reaction/i.test(p.textContent)) sectionType = 'Reaction';
-        else if (hasActionIcon) {
+        const hasActionIcon = !!p.querySelector('[class*="-action-icon"]');
+        if (p.querySelector('.reaction-icon') || /reaction/i.test(p.textContent)) {
+          sectionType = 'Reaction';
+        } else if (hasActionIcon) {
           sectionType = (key === 'Melee' || key === 'Ranged') ? 'Attack' : 'Action';
         }
 
-        // common headings that should be recognized explicitly
         if (/^Melee$/i.test(key) || /^Ranged$/i.test(key)) sectionType = 'Attack';
 
-        // parse
+        // Parse based on section type
         switch (sectionType) {
           case 'Perception': {
-            // Keep the WHOLE line in Senses (matches target like "Perception +20; darkvision")
             if (!finalJson.Senses.some(s => s.startsWith('Perception'))) {
               finalJson.Senses.push(fullText);
             }
@@ -252,8 +233,6 @@
           }
 
           case 'Abilities': {
-            // The abilities may be spread across comma/space separated tokens, handle both
-            // Example: "Str +8, Dex +2, Con +5, Int +0, Wis +1, Cha +3"
             const chunks = fullText.replace(/[,;]/g, ',').split(',').map(s => s.trim()).filter(Boolean);
             chunks.forEach(chunk => {
               const m = chunk.match(/^([A-Za-z]+)\s*([+-]?\d+)/);
@@ -266,10 +245,8 @@
           }
 
           case 'AC': {
-            // AC value
             finalJson.AC.Value = parseInt(fullText.match(/AC\s+(\d+)/)?.[1] || '0', 10);
 
-            // Saves possibly on same line
             const savesMatch = fullText.match(/Fort\s*([+-]\d+)[,;]?\s*Ref\s*([+-]\d+)[,;]?\s*Will\s*([+-]\d+)/i);
             if (savesMatch) {
               finalJson.Saves.push({ Name: "Fort", Modifier: parseInt(savesMatch[1], 10) });
@@ -277,7 +254,6 @@
               finalJson.Saves.push({ Name: "Will", Modifier: parseInt(savesMatch[3], 10) });
             }
 
-            // Notes after semicolon
             const notesMatch = fullText.match(/;\s*(.*)$/);
             if (notesMatch) finalJson.AC.Notes = notesMatch[1].trim();
             break;
@@ -286,7 +262,6 @@
           case 'HP': {
             finalJson.HP.Value = parseInt(fullText.match(/HP\s+(\d+)/)?.[1] || '0', 10);
 
-            // Allow extras like Hardness/Regeneration/Fast Healing to live in HP.Notes
             const hpNotes = [];
             const hardness = fullText.match(/Hardness\s+(\d+)/i);
             if (hardness) hpNotes.push(`Hardness ${hardness[1]}`);
@@ -298,7 +273,6 @@
               finalJson.HP.Notes = hpNotes.join('; ');
             }
 
-            // Parse defenses if embedded
             const immunitiesMatch = fullText.match(/Immunities\s+([^;]+)/i);
             if (immunitiesMatch) finalJson.DamageImmunities = immunitiesMatch[1].split(',').map(i => i.trim()).filter(Boolean);
             const weaknessesMatch = fullText.match(/Weaknesses\s+([^;]+)/i);
@@ -328,9 +302,7 @@
 
           case 'Attack': {
             const actionCost = getActionCost(p);
-            // Remove the leading "Melee"/"Ranged"
             const textAfterKey = fullText.replace(/^(Melee|Ranged)\s*/i, '').trim();
-            // weapon short name = until first " (" or " +" or ";" or end
             const nameMatch = textAfterKey.match(/^([^(+;]+?)(?:\s*[+;(]|$)/);
             const weaponShort = (nameMatch ? nameMatch[1] : 'Attack').trim();
             const formatted = weaponShort.charAt(0).toUpperCase() + weaponShort.slice(1);
@@ -342,7 +314,6 @@
           }
 
           case 'Reaction': {
-            // e.g., "Attack of Opportunity", "Catch Rock"
             finalJson.Reactions.push({ Name: key, Content: value, Usage: "" });
             break;
           }
@@ -354,7 +325,6 @@
           }
 
           default: {
-            // Spell sections & similar
             if (/(arcane|divine|occult|primal).*(spells)|focus spells|rituals|cantrips/i.test(key)) {
               finalJson.Description += `${key}: ${value.replace(/<[^>]*>/g, ' ')}\n\n`;
             } else {
@@ -365,9 +335,9 @@
         }
       });
 
-      // --- Post-processing: fallback for Saves if not found on AC line ---
+      // Post-processing: fallback for Saves
       if (finalJson.Saves.length === 0) {
-        const node = [...doc.querySelectorAll('p, li')].find(el =>
+        const node = [...document.querySelectorAll('.page-inner-holder p')].find(el =>
           /Fort\b/i.test(el.textContent) && /Ref\b/i.test(el.textContent) && /Will\b/i.test(el.textContent)
         );
         if (node) {
@@ -381,7 +351,7 @@
         }
       }
 
-      // --- Post-processing: if AC.Notes empty but we have saves, synthesize the "Fort +x, Ref +y, Will +z" note ---
+      // Post-processing: Add saves to AC notes if needed
       if (!finalJson.AC.Notes && finalJson.Saves.length >= 2) {
         finalJson.AC.Notes = buildSavesNote(finalJson.Saves);
       }
@@ -390,10 +360,24 @@
 
     } catch (e) {
       console.error("Demiplane Extractor Error:", e);
-      return { error: "Failed to parse character data.", message: e.message };
+      return { 
+        error: "Failed to parse creature data", 
+        message: e.message,
+        details: "Make sure you're on a creature page and it has fully loaded."
+      };
     }
   }
 
-  const characterStats = extractStats();
-  chrome.runtime.sendMessage({ action: "displayStats", data: characterStats });
+  // Run extraction and send results
+  extractStats().then(characterStats => {
+    chrome.runtime.sendMessage({ action: "displayStats", data: characterStats });
+  }).catch(error => {
+    chrome.runtime.sendMessage({ 
+      action: "displayStats", 
+      data: { 
+        error: "Extraction Failed", 
+        message: error.message 
+      } 
+    });
+  });
 })();

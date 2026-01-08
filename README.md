@@ -2,9 +2,19 @@
 
 A Chrome extension that extracts Pathfinder 2e creature stat blocks from Demiplane pages and converts them to JSON format compatible with Improved Initiative or any other use.
 
+## Recent Updates (v2.0)
+
+**Important:** Demiplane migrated to client-side rendering, which broke the original extraction method. This version has been completely rewritten to work with the new architecture.
+
+### What Changed
+- **Old method:** Extracted data from `__NEXT_DATA__` JSON embedded in page source
+- **New method:** Waits for page to fully load, then parses the rendered DOM directly
+- **Result:** Extension now works with Demiplane's current infrastructure
+
 ## Features
 
 - **One-click extraction** of creature stats from Demiplane creature pages
+- **Auto-wait for page load** - Handles client-side rendered content automatically
 - **Complete stat conversion** including HP, AC, abilities, skills, saves, and more
 - **Copy to clipboard** functionality for easy import into Improved Initiative
 - **Automatic formatting** converts Pathfinder 2e stats to Improved Initiative JSON structure
@@ -21,24 +31,43 @@ A Chrome extension that extracts Pathfinder 2e creature stat blocks from Demipla
 
 ### Required Files
 - `manifest.json` - Extension configuration
-- `content.js` - Main extraction logic
+- `content.js` - Main extraction logic (now with async/await for client-side rendering)
 - `popup.html` - Extension popup interface
 - `popup.js` - Popup functionality
 - Icon files (16x16, 48x48, 128x128 px)
 
 ## Usage
 
-1. **Navigate to a creature page** on Demiplane (e.g., a specific monster or NPC from a Pathfinder 2e source)
-2. **Click the extension icon** in your Chrome toolbar
-3. **Click "Extract Stats"** in the popup window
-4. **Review the extracted JSON** in the output area
-5. **Click "Copy JSON"** to copy the formatted stats to your clipboard
-6. **Import into Improved Initiative** by pasting the JSON data
+1. **Navigate to a creature page** on Demiplane (e.g., https://app.demiplane.com/nexus/pathfinder2e/creatures/shambler)
+2. **Wait for the page to fully load** (the extension will automatically wait up to 10 seconds)
+3. **Click the extension icon** in your Chrome toolbar
+4. **Click "Extract Stats"** in the popup window
+5. **Review the extracted JSON** in the output area
+6. **Click "Copy JSON"** to copy the formatted stats to your clipboard
+7. **Import into Improved Initiative** by pasting the JSON data
 
 ### Example Workflow
 ```
 Demiplane Monster Page → Extension → JSON Output → Improved Initiative
 ```
+
+## How It Works
+
+### Client-Side Rendering Support
+The extension now:
+1. Injects the content script when you click "Extract Stats"
+2. Waits for the `.page-inner-holder` element to appear (up to 10 seconds)
+3. Extracts data from the fully-rendered DOM structure
+4. Parses text content from specific CSS classes
+
+### DOM Structure
+The extension looks for these key elements:
+- **Name:** `.elem-disp-header-name-page h1`
+- **Level:** `.element-display-header-tag-creature`
+- **Traits:** `.trait-tag button`
+- **Stats:** `.Stat-Body` and `.Stat-Body-secondary` paragraphs
+- **Action Icons:** `.one-action-icon`, `.two-action-icon`, `.reaction-icon`, etc.
+- **Image:** `.elem-disp-header-thumb-img-page`
 
 ## Supported Data
 
@@ -100,16 +129,21 @@ The extension generates JSON in the following structure:
 ## Compatibility
 
 - **Chrome Browser** (Manifest V3)
-- **Demiplane** creature pages with Pathfinder 2e stat blocks
+- **Demiplane** creature pages with Pathfinder 2e stat blocks (current architecture)
 - **Improved Initiative** JSON import format
 - **Pathfinder 2e** stat block structure
 
 ## Troubleshooting
 
+### "Content failed to load" Error
+- The page took longer than 10 seconds to load - try refreshing and extracting again
+- You might be on a slow connection - the extension will wait up to 10 seconds
+- Check that you're on a specific creature page, not a category listing
+
 ### "No Stat Block Found" Error
-- Ensure you're on a specific creature page, not a category or search page
-- The page must contain a properly formatted Pathfinder 2e stat block
-- Try refreshing the page and extracting again
+- Ensure you're on a specific creature page with a stat block visible
+- Make sure the page has fully rendered (you should see the creature stats)
+- Try scrolling down to ensure all content has loaded
 
 ### Empty or Incomplete Data
 - Some creatures may have non-standard stat block formatting
@@ -120,6 +154,7 @@ The extension generates JSON in the following structure:
 - Verify the extension is enabled in `chrome://extensions/`
 - Check that you have the necessary permissions (activeTab, scripting, clipboardWrite)
 - Try reloading the extension or restarting Chrome
+- Check the browser console (F12) for error messages
 
 ## Development
 
@@ -127,7 +162,7 @@ The extension generates JSON in the following structure:
 ```
 demiplane-stat-extractor/
 ├── manifest.json          # Extension configuration
-├── content.js            # Main extraction logic
+├── content.js            # Main extraction logic (now async with DOM parsing)
 ├── popup.html            # Extension popup UI
 ├── popup.js              # Popup functionality
 └── icons/                # Extension icons
@@ -137,14 +172,33 @@ demiplane-stat-extractor/
 ```
 
 ### Key Functions
-- `extractStats()` - Main extraction function
+- `waitForContent()` - Waits for page to fully render (new in v2.0)
+- `extractStats()` - Main extraction function (now async)
 - `modifierToScore()` - Converts ability modifiers to scores
 - `parseNameModifier()` - Parses skill text into structured data
-- `getActionCost()` - Extracts action cost icons
+- `getActionCost()` - Extracts action cost from icons
+
+### Architecture Changes (v2.0)
+- Switched from synchronous `__NEXT_DATA__` parsing to async DOM parsing
+- Added retry logic with 40 attempts at 250ms intervals (10 second timeout)
+- Updated all selectors to match new Demiplane DOM structure
+- Maintained backward-compatible JSON output format
 
 ## Contributing
 
 Feel free to submit issues, feature requests, or pull requests to improve the extension's functionality and compatibility with different creature stat blocks.
+
+## Version History
+
+### v2.0 (Current)
+- Complete rewrite for client-side rendered pages
+- Added async/await support for page load detection
+- Updated all DOM selectors for new Demiplane architecture
+- Improved error handling and user feedback
+
+### v1.0 (Legacy)
+- Original version using `__NEXT_DATA__` JSON extraction
+- Worked with server-side rendered Demiplane pages
 
 ## License
 
