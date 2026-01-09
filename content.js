@@ -185,14 +185,19 @@
       }
 
       // --- Parse Stat Block ---
-      const statParagraphs = document.querySelectorAll('.page-inner-holder p.Stat-Body, .page-inner-holder p.Stat-Body-secondary');
+      // Select ALL paragraphs, not just specific classes
+      const statParagraphs = document.querySelectorAll('.page-inner-holder p');
       
       statParagraphs.forEach(p => {
         const strongTag = p.querySelector('strong');
         if (!strongTag) return;
 
         const key = strongTag.textContent.trim();
-        let fullText = p.textContent.trim().replace(/\u00a0/g, ' ');
+        // Normalize en-dash (–) to regular minus sign (-)
+        let fullText = p.textContent.trim()
+          .replace(/\u00a0/g, ' ')  // non-breaking space
+          .replace(/\u2013/g, '-')  // en-dash to minus
+          .replace(/\u2014/g, '-'); // em-dash to minus
         let value = fullText.replace(key, '').trim();
         if (value.startsWith(';')) value = value.substring(1).trim();
 
